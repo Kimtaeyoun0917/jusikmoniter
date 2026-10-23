@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>주식 실시간 모니터링 대시보드</title>
+
+  <!-- PWA 필수 메타태그 -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  
+  <!-- iOS 사파리 Web App 설정 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="주식대시보드">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='128' fill='%232563eb'/%3E%3Cpath d='M96 352 L200 240 L280 300 L416 160' stroke='white' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpolyline points='336,160 416,160 416,240' stroke='white' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+
+  <!-- Tailwind CSS & Chart.js -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: {} }
+    }
+  </script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .custom-scroll::-webkit-scrollbar { height: 4px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .dark .custom-scroll::-webkit-scrollbar-thumb { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen transition-colors duration-200 pb-10">
+
+  <!-- PWA 앱 설치 유도 배너 (조건 충족 시 자동 표시) -->
+  <div id="pwaInstallBanner" class="hidden bg-blue-600 text-white px-4 py-2.5 text-xs flex justify-between items-center shadow-md sticky top-0 z-40">
+    <div class="flex items-center space-x-2">
+      <span class="text-base">📲</span>
+      <span>앱으로 설치하여 전체 화면으로 더 빠르게 이용하세요!</span>
+    </div>
+    <div class="flex items-center space-x-2">
+      <button id="btnPwaInstall" class="bg-white text-blue-600 font-bold px-2.5 py-1 rounded shadow text-xs">설치</button>
+      <button onclick="dismissInstallBanner()" class="text-blue-100 px-1 text-sm font-bold">✕</button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center space-x-2">
+        <span class="text-xl">📈</span>
+        <div>
+          <h1 class="font-bold text-sm sm:text-base leading-tight">주식 모니터링</h1>
+          <p class="text-[10px] text-slate-500 dark:text-slate-400" id="syncStatus">시트 연동 대기 중</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <button onclick="openModal('addStockModal')" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow">
+          + 추가
+        </button>
+        <button onclick="openModal('configModal')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium border border-slate-300 dark:border-slate-700">
+          ⚙️
+        </button>
+        <button id="themeToggle" class="p-1.5 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-xs">
+          🌙
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
+
+    <!-- KPI Summary Row -->
+    <section class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+      <div class="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div class="text-[11px] text-slate-500 dark:text-slate-400">모니터링 종목</div>
+        <div class="text-lg sm:text-xl font-bold mt-0.5" id="totalStocksCount">0개</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div class="text-[11px] text-slate-500 dark:text-slate-400">전일 대비 상승</div>
+        <div class="text-lg sm:text-xl font-bold text-emerald-500 mt-0.5" id="upStocksCount">0개</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div class="text-[11px] text-slate-500 dark:text-slate-400">전일 대비 하락</div>
+        <div class="text-lg sm:text-xl font-bold text-rose-500 mt-0.5" id="downStocksCount">0개</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div class="text-[11px] text-slate-500 dark:text-slate-400">대표 ETF (QQQ)</div>
+        <div class="text-lg sm:text-xl font-bold mt-0.5 text-slate-700 dark:text-slate-200" id="qqqBrief">-</div>
+      </div>
+    </section>
+
+    <!-- Chart Panel -->
+    <section class="bg-white dark:bg-slate-900 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-800">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div>
+          <h2 class="font-bold text-sm sm:text-base flex items-center gap-1.5">
+            <span id="chartTitle">AAPL (애플)</span>
+          </h2>
+          <p class="text-[10px] sm:text-xs text-slate-500" id="chartSubTitle">주가 추이</p>
+        </div>
+
+        <!-- 봉 주기 선택 탭 -->
+        <div class="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-semibold">
+          <button onclick="setPeriod('daily')" id="btn-daily" class="px-2 py-0.5 rounded bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 text-xs">일봉</button>
+          <button onclick="setPeriod('weekly')" id="btn-weekly" class="px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 text-xs">주봉</button>
+          <button onclick="setPeriod('monthly')" id="btn-monthly" class="px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 text-xs">월봉</button>
+          <button onclick="setPeriod('yearly')" id="btn-yearly" class="px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 text-xs">년봉</button>
+        </div>
+      </div>
+
+      <!-- Chart Container -->
+      <div class="relative h-60 sm:h-72 w-full">
+        <canvas id="stockChart"></canvas>
+      </div>
+
+      <!-- 비교 뱃지 영역 -->
+      <div id="compareBadges" class="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs"></div>
+    </section>
+
+    <!-- Stock Table -->
+    <section class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div class="p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+        <h3 class="font-bold text-xs sm:text-sm">종목 현황 리스트</h3>
+        <button onclick="fetchSheetData()" class="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+          🔄 동기화
+        </button>
+      </div>
+
+      <div class="overflow-x-auto custom-scroll">
+        <table class="w-full text-left text-xs whitespace-nowrap">
+          <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800">
+            <tr>
+              <th class="py-2.5 px-3">구분</th>
+              <th class="py-2.5 px-3">티커</th>
+              <th class="py-2.5 px-3">종목명</th>
+              <th class="py-2.5 px-3 text-right">현재가</th>
+              <th class="py-2.5 px-3 text-right">전일대비</th>
+              <th class="py-2.5 px-3 text-right">등락률</th>
+              <th class="py-2.5 px-3 text-right">시가총액</th>
+              <th class="py-2.5 px-3 text-center">차트/비교</th>
+            </tr>
+          </thead>
+          <tbody id="stockTableBody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- 신규 종목 추가 모달 -->
+  <div id="addStockModal" class="fixed inset-0 z-50 bg-black/60 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-4 border border-slate-200 dark:border-slate-800 shadow-2xl">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm">구글 시트에 신규 종목 추가</h3>
+        <button onclick="closeModal('addStockModal')" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+      <form id="addStockForm" onsubmit="submitNewStock(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold mb-1">구분 (카테고리)</label>
+          <select id="modalCategory" class="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700">
+            <option value="나스닥 20대">나스닥 20대</option>
+            <option value="대표 ETF">대표 ETF</option>
+            <option value="국내 대표주">국내 대표주</option>
+            <option value="관심 종목" selected>관심 종목</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold mb-1">티커 (Ticker)</label>
+          <input type="text" id="modalTicker" required placeholder="예: PLTR 또는 KRX:005930" class="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 uppercase font-mono">
+        </div>
+        <div>
+          <label class="block font-semibold mb-1">종목명 (선택)</label>
+          <input type="text" id="modalName" placeholder="비워둘 시 GOOGLEFINANCE 공식명" class="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700">
+        </div>
+        <div class="pt-2 flex justify-end space-x-2">
+          <button type="button" onclick="closeModal('addStockModal')" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300">취소</button>
+          <button type="submit" id="btnAddSubmit" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">시트 반영</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 시트 설정 모달 -->
+  <div id="configModal" class="fixed inset-0 z-50 bg-black/60 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-4 border border-slate-200 dark:border-slate-800 shadow-2xl text-xs">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm">Google Apps Script Web App URL</h3>
+        <button onclick="closeModal('configModal')" class="text-slate-400">✕</button>
+      </div>
+      <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full p-2 border rounded-lg bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 font-mono text-xs mb-3">
+      <div class="flex justify-end space-x-2">
+        <button onclick="saveGasUrl()" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold">저장 및 동기화</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // PWA Service Worker 등록
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('PWA ServiceWorker 등록 완료:', reg.scope))
+          .catch(err => console.error('ServiceWorker 등록 실패:', err));
+      });
+    }
+
+    // PWA 설치 프롬프트 이벤트 제어
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const banner = document.getElementById('pwaInstallBanner');
+      if (banner) banner.classList.remove('hidden');
+    });
+
+    document.getElementById('btnPwaInstall').addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`사용자 설치 응답: ${outcome}`);
+        deferredPrompt = null;
+        dismissInstallBanner();
+      }
+    });
+
+    function dismissInstallBanner() {
+      document.getElementById('pwaInstallBanner').classList.add('hidden');
+    }
+
+    // 기본 로컬 데이터
+    let stockList = [
+      { category: "나스닥 20대", ticker: "AAPL", name: "애플 (Apple)", price: 348.22, change: 4.23, changePct: 0.0123, marketCap: 5081985377415, high52: 348.36, low52: 243.42, pos52: 0.999 },
+      { category: "나스닥 20대", ticker: "MSFT", name: "마이크로소프트 (Microsoft)", price: 521.08, change: -11.87, changePct: -0.0223, marketCap: 3869300000000, high52: 553.72, low52: 349.20, pos52: 0.840 },
+      { category: "나스닥 20대", ticker: "NVDA", name: "엔비디아 (NVIDIA)", price: 212.21, change: -9.76, changePct: -0.0440, marketCap: 5114260000000, high52: 243.37, low52: 164.27, pos52: 0.606 },
+      { category: "나스닥 20대", ticker: "AMZN", name: "아마존 (Amazon)", price: 250.38, change: -11.99, changePct: -0.0457, marketCap: 2700680000000, high52: 287.16, low52: 196.00, pos52: 0.597 },
+      { category: "나스닥 20대", ticker: "GOOGL", name: "알파벳 A (Alphabet)", price: 324.22, change: -10.54, changePct: -0.0315, marketCap: 3944810000000, high52: 408.61, low52: 251.85, pos52: 0.462 },
+      { category: "나스닥 20대", ticker: "META", name: "메타 (Meta Platforms)", price: 648.85, change: -48.67, changePct: -0.0698, marketCap: 1652950000000, high52: 779.82, low52: 520.26, pos52: 0.495 },
+      { category: "나스닥 20대", ticker: "TSLA", name: "테슬라 (Tesla)", price: 374.58, change: -11.89, changePct: -0.0308, marketCap: 1480610000000, high52: 498.82, low52: 297.38, pos52: 0.383 },
+      { category: "대표 ETF", ticker: "QQQ", name: "인베스코 QQQ (1x)", price: 704.47, change: -20.73, changePct: -0.0286, marketCap: 275131000000, high52: 762.86, low52: 555.60, pos52: 0.718 },
+      { category: "대표 ETF", ticker: "QLD", name: "프로셰어즈 울트라 QQQ (2x)", price: 86.26, change: -5.20, changePct: -0.0569, marketCap: 3277880000, high52: 101.62, low52: 56.60, pos52: 0.659 },
+      { category: "국내 대표주", ticker: "KRX:005930", name: "삼성전자 (Samsung Electronics)", price: 215500, change: 1000, changePct: 0.0047, marketCap: 1393100000000000, high52: 374500, low52: 94500, pos52: 0.432 },
+      { category: "국내 대표주", ticker: "KRX:000660", name: "SK하이닉스 (SK Hynix)", price: 1277000, change: 54000, changePct: 0.0442, marketCap: 932839000000000, high52: 2987000, low52: 468000, pos52: 0.321 }
+    ];
+
+    let currentPeriod = 'daily';
+    let primaryStock = 'AAPL';
+    let compareTickers = new Set();
+    let chartInstance = null;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      const savedUrl = localStorage.getItem('gas_web_app_url');
+      if (savedUrl) {
+        document.getElementById('gasUrlInput').value = savedUrl;
+        fetchSheetData();
+      } else {
+        renderTable();
+        updateSummary();
+        renderChart();
+      }
+    });
+
+    function initTheme() {
+      const isDark = localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) document.documentElement.classList.add('dark');
+      document.getElementById('themeToggle').addEventListener('click', () => {
+        document.documentElement.classList.toggle('dark');
+        const darkActive = document.documentElement.classList.contains('dark');
+        localStorage.setItem('theme', darkActive ? 'dark' : 'light');
+        document.getElementById('themeToggle').innerText = darkActive ? '☀️' : '🌙';
+        if (chartInstance) renderChart();
+      });
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function saveGasUrl() {
+      const url = document.getElementById('gasUrlInput').value.trim();
+      if (!url) return alert('유효한 Apps Script URL을 입력해주세요.');
+      localStorage.setItem('gas_web_app_url', url);
+      closeModal('configModal');
+      fetchSheetData();
+    }
+
+    async function fetchSheetData() {
+      const url = localStorage.getItem('gas_web_app_url');
+      if (!url) return;
+      document.getElementById('syncStatus').innerText = '구글 시트 동기화 중...';
+      try {
+        const res = await fetch(`${url}?action=getList`);
+        const json = await res.json();
+        if (json.status === 'success' && json.data && json.data.length > 0) {
+          stockList = json.data;
+          document.getElementById('syncStatus').innerText = `동기화 완료 (${new Date().toLocaleTimeString()} 기준)`;
+          renderTable();
+          updateSummary();
+          renderChart();
+        }
+      } catch (err) {
+        document.getElementById('syncStatus').innerText = '동기화 오류 (설정 확인)';
+        console.error(err);
+      }
+    }
+
+    async function submitNewStock(e) {
+      e.preventDefault();
+      const url = localStorage.getItem('gas_web_app_url');
+      if (!url) {
+        alert('먼저 ⚙️ 설정에서 Apps Script 배포 URL을 저장해주세요.');
+        openModal('configModal');
+        return;
+      }
+
+      const ticker = document.getElementById('modalTicker').value.trim().toUpperCase();
+      const category = document.getElementById('modalCategory').value;
+      const name = document.getElementById('modalName').value.trim();
+
+      const btn = document.getElementById('btnAddSubmit');
+      btn.innerText = '반영 중...';
+      btn.disabled = true;
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'addStock',
+            ticker: ticker,
+            category: category,
+            name: name
+          })
+        });
+
+        const result = await response.json();
+        if (result.status === 'success') {
+          alert(`[${ticker}] 종목이 구글 시트에 동일 서식으로 추가되었습니다.`);
+          closeModal('addStockModal');
+          document.getElementById('addStockForm').reset();
+          fetchSheetData();
+        } else {
+          alert('오류: ' + result.message);
+        }
+      } catch (err) {
+        alert('시트 전송 중 오류가 발생했습니다.');
+        console.error(err);
+      } finally {
+        btn.innerText = '시트 반영';
+        btn.disabled = false;
+      }
+    }
+
+    function updateSummary() {
+      document.getElementById('totalStocksCount').innerText = `${stockList.length}개`;
+      const up = stockList.filter(s => s.change > 0).length;
+      const down = stockList.filter(s => s.change < 0).length;
+      document.getElementById('upStocksCount').innerText = `${up}개`;
+      document.getElementById('downStocksCount').innerText = `${down}개`;
+
+      const qqq = stockList.find(s => s.ticker === 'QQQ');
+      if (qqq) {
+        const color = qqq.change >= 0 ? 'text-emerald-500' : 'text-rose-500';
+        document.getElementById('qqqBrief').innerHTML = `$${qqq.price.toFixed(2)} <span class="text-xs ${color}">(${qqq.changePct > 0 ? '+' : ''}${(qqq.changePct * 100).toFixed(2)}%)</span>`;
+      }
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('stockTableBody');
+      tbody.innerHTML = '';
+
+      stockList.forEach(stock => {
+        const isUp = stock.change >= 0;
+        const colorClass = isUp ? 'text-emerald-500' : 'text-rose-500';
+        const isSelected = stock.ticker === primaryStock;
+        const isComparing = compareTickers.has(stock.ticker);
+
+        const tr = document.createElement('tr');
+        tr.className = `hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer ${isSelected ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`;
+        
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 text-slate-500">${stock.category}</td>
+          <td class="py-2.5 px-3 font-bold font-mono text-slate-800 dark:text-slate-200">${stock.ticker}</td>
+          <td class="py-2.5 px-3 font-medium">${stock.name}</td>
+          <td class="py-2.5 px-3 text-right font-semibold font-mono">${formatCurrency(stock.price, stock.ticker)}</td>
+          <td class="py-2.5 px-3 text-right font-mono ${colorClass}">${isUp ? '+' : ''}${formatCurrency(stock.change, stock.ticker)}</td>
+          <td class="py-2.5 px-3 text-right font-mono font-bold ${colorClass}">${isUp ? '+' : ''}${(stock.changePct * (stock.changePct > 1 ? 1 : 100)).toFixed(2)}%</td>
+          <td class="py-2.5 px-3 text-right text-slate-400 font-mono">${formatMarketCap(stock.marketCap)}</td>
+          <td class="py-2.5 px-3 text-center space-x-1" onclick="event.stopPropagation()">
+            <button onclick="selectPrimaryStock('${stock.ticker}')" class="px-2 py-0.5 rounded text-[11px] ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700'}">선택</button>
+            <button onclick="toggleCompareStock('${stock.ticker}')" class="px-2 py-0.5 rounded text-[11px] ${isComparing ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700'}">+비교</button>
+          </td>
+        `;
+
+        tr.addEventListener('click', () => selectPrimaryStock(stock.ticker));
+        tbody.appendChild(tr);
+      });
+      renderCompareBadges();
+    }
+
+    function formatCurrency(val, ticker) {
+      if (!val) return '-';
+      const isKRW = ticker && ticker.startsWith('KRX:');
+      return isKRW ? `${Math.round(val).toLocaleString()}원` : `$${Number(val).toFixed(2)}`;
+    }
+
+    function formatMarketCap(cap) {
+      if (!cap || cap === '-') return '-';
+      const num = parseFloat(cap);
+      if (num > 1e12) return (num / 1e12).toFixed(1) + 'T';
+      if (num > 1e9) return (num / 1e9).toFixed(1) + 'B';
+      return num.toLocaleString();
+    }
+
+    function selectPrimaryStock(ticker) {
+      primaryStock = ticker;
+      renderTable();
+      renderChart();
+    }
+
+    function toggleCompareStock(ticker) {
+      if (ticker === primaryStock) return;
+      if (compareTickers.has(ticker)) compareTickers.delete(ticker);
+      else compareTickers.add(ticker);
+      renderTable();
+      renderChart();
+    }
+
+    function setPeriod(period) {
+      currentPeriod = period;
+      ['daily', 'weekly', 'monthly', 'yearly'].forEach(p => {
+        const btn = document.getElementById(`btn-${p}`);
+        if (p === period) {
+          btn.className = "px-2 py-0.5 rounded bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 font-bold text-xs";
+        } else {
+          btn.className = "px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 text-xs";
+        }
+      });
+      renderChart();
+    }
+
+    function renderCompareBadges() {
+      const container = document.getElementById('compareBadges');
+      container.innerHTML = '<span class="text-slate-400 text-xs self-center">비교 중:</span>';
+      if (compareTickers.size === 0) {
+        container.innerHTML += '<span class="text-slate-400 text-xs italic">없음 (목록의 +비교 버튼 클릭)</span>';
+        return;
+      }
+      compareTickers.forEach(ticker => {
+        const span = document.createElement('span');
+        span.className = "px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center gap-1 font-semibold";
+        span.innerHTML = `${ticker} <button onclick="toggleCompareStock('${ticker}')" class="hover:text-black">×</button>`;
+        container.appendChild(span);
+      });
+    }
+
+    function renderChart() {
+      const ctx = document.getElementById('stockChart').getContext('2d');
+      const isDark = document.documentElement.classList.contains('dark');
+      const gridColor = isDark ? '#334155' : '#e2e8f0';
+      const textColor = isDark ? '#94a3b8' : '#64748b';
+
+      const stock = stockList.find(s => s.ticker === primaryStock) || stockList[0];
+      document.getElementById('chartTitle').innerText = `${stock.ticker} (${stock.name})`;
+
+      const points = currentPeriod === 'daily' ? 30 : currentPeriod === 'weekly' ? 24 : currentPeriod === 'monthly' ? 12 : 5;
+      const labels = Array.from({ length: points }, (_, i) => `${currentPeriod === 'yearly' ? (2022 + i) + '년' : (i + 1) + (currentPeriod === 'daily' ? '일' : currentPeriod === 'weekly' ? '주' : '월')}`);
+
+      const isMulti = compareTickers.size > 0;
+      document.getElementById('chartSubTitle').innerText = isMulti ? '기준 시점 대비 상대 수익률(%) 추이' : '주가 추이';
+
+      const palette = ['#2563eb', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+      const datasets = [];
+
+      const baseValues = generateSimulatedHistory(stock, points);
+      datasets.push({
+        label: isMulti ? `${stock.ticker} (%)` : `${stock.ticker} 주가`,
+        data: isMulti ? normalizeToPct(baseValues) : baseValues,
+        borderColor: palette[0],
+        backgroundColor: palette[0] + '15',
+        borderWidth: 2,
+        fill: !isMulti,
+        tension: 0.2
+      });
+
+      let colorIdx = 1;
+      compareTickers.forEach(compTicker => {
+        const compStock = stockList.find(s => s.ticker === compTicker);
+        if (compStock) {
+          const compValues = generateSimulatedHistory(compStock, points);
+          datasets.push({
+            label: `${compStock.ticker} (%)`,
+            data: normalizeToPct(compValues),
+            borderColor: palette[colorIdx % palette.length],
+            borderWidth: 2,
+            fill: false,
+            tension: 0.2
+          });
+          colorIdx++;
+        }
+      });
+
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: textColor, font: { size: 10 } } },
+            tooltip: {
+              callbacks: {
+                label: function(c) {
+                  return ` ${c.dataset.label}: ${isMulti ? c.parsed.y.toFixed(2) + '%' : c.parsed.y.toLocaleString()}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 } } },
+            y: {
+              grid: { color: gridColor },
+              ticks: {
+                color: textColor,
+                font: { size: 10 },
+                callback: v => isMulti ? `${v.toFixed(1)}%` : v.toLocaleString()
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function generateSimulatedHistory(st, len) {
+      const end = st.price || 100;
+      const arr = [end];
+      let curr = end;
+      for (let i = 1; i < len; i++) {
+        const delta = (Math.random() - 0.48) * (st.price * 0.035);
+        curr = Math.max((st.low52 || st.price * 0.7) * 0.95, Math.min((st.high52 || st.price * 1.3) * 1.05, curr - delta));
+        arr.unshift(Number(curr.toFixed(2)));
+      }
+      return arr;
+    }
+
+    function normalizeToPct(arr) {
+      const base = arr[0] || 1;
+      return arr.map(v => Number((((v - base) / base) * 100).toFixed(2)));
+    }
+  </script>
+</body>
+</html>
